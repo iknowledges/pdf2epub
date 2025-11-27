@@ -4,13 +4,14 @@ import base64
 from pathlib import Path
 from typing import Any, List
 from ebooklib import epub
+from latex2mathml import converter
 
 
 def inline_equation(content: str) -> str:
-    return '<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mrow><mi>a</mi><mo>,</mo><mi>c</mi><mo>,</mo><mi>*</mi></mrow></msup><annotation encoding="application/x-tex">' + content + '</annotation></semantics></math>'
+    return converter.convert(content, display="inline")
 
 def interline_equation(content: str) -> str:
-    return '<math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Q</mi><mi>%</mi></msub><mo>=</mo><mi>f</mi><mo stretchy="false" form="prefix">(</mo><mi>P</mi><mo stretchy="false" form="postfix">)</mo><mo>+</mo><mi>g</mi><mo stretchy="false" form="prefix">(</mo><mi>T</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">' + content + '</annotation></semantics></math>'
+    return converter.convert(content, display="block")
 
 def image_to_base64(image_path: str, root_path: Path) -> str:
     file_path = root_path.joinpath("images").joinpath(image_path)
@@ -60,9 +61,10 @@ def handle_text_spans(spans: List) -> str:
     return result
 
 def handle_text_lines(lines: List) -> str:
-    result = ''
+    result = '<p>'
     for line in lines:
-        result += '<p>' + handle_text_spans(line["spans"]) + '</p>'
+        result += handle_text_spans(line["spans"])
+    result += '</p>'
     return result
 
 def handle_interline_equation(lines: List) -> str:
