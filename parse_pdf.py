@@ -1,14 +1,10 @@
 import os
-import sys
+import argparse
 from pathlib import Path
 from mineru.cli.common import do_parse, read_fn
 
 
-def parse_doc(path_list: list[Path]):
-    # 'ch', 'en'
-    lang = "en"
-    start_page_id = 0
-    end_page_id = None
+def parse_doc(path_list: list[Path], start_page_id, end_page_id, lang):
     formula_enable = True
     table_enable = True
     output_dir = "./output"
@@ -48,12 +44,15 @@ def parse_doc(path_list: list[Path]):
         print(e)
 
 def main():
-    if len(sys.argv) < 2:
-        print("Please set a pdf file path!")
-        return
-    arg = sys.argv[1]
-    file_path = Path(arg)
-    parse_doc([file_path])
+    parser = argparse.ArgumentParser(prog='parse_pdf')
+    parser.add_argument('filename')
+    parser.add_argument('--start', default=0)
+    parser.add_argument('--end', default=None)
+    # 'ch', 'en'
+    parser.add_argument('--lang', default='en')
+    args = parser.parse_args()
+    filename = Path(args.filename)
+    parse_doc([filename], args.start, args.end, args.lang)
 
 
 if __name__ == '__main__':
