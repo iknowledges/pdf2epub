@@ -1,19 +1,22 @@
+import sys
 import json
-from pathlib import Path
-from ebooklib import epub
 import base64
+from pathlib import Path
+from typing import Any, List
+from ebooklib import epub
 
-def inline_equation(content):
+
+def inline_equation(content: str) -> str:
     return '<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mrow><mi>a</mi><mo>,</mo><mi>c</mi><mo>,</mo><mi>*</mi></mrow></msup><annotation encoding="application/x-tex">' + content + '</annotation></semantics></math>'
 
-def interline_equation(content):
+def interline_equation(content: str) -> str:
     return '<math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Q</mi><mi>%</mi></msub><mo>=</mo><mi>f</mi><mo stretchy="false" form="prefix">(</mo><mi>P</mi><mo stretchy="false" form="postfix">)</mo><mo>+</mo><mi>g</mi><mo stretchy="false" form="prefix">(</mo><mi>T</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">' + content + '</annotation></semantics></math>'
 
-def image_to_base64(image_path):
-    image_root = Path("./demo2/auto/images")
+def image_to_base64(image_path: str, root_path: Path) -> str:
+    file_path = root_path.joinpath("images").joinpath(image_path)
     try:
         # 读取图片文件
-        with open(image_root.joinpath(image_path), 'rb') as image_file:
+        with open(file_path, 'rb') as image_file:
             # 将图片转换为base64
             base64_data = base64.b64encode(image_file.read()).decode('utf-8')
         
@@ -36,7 +39,7 @@ def image_to_base64(image_path):
         print(f"转换失败: {e}")
         return ''
 
-def handle_title(block_lines):
+def handle_title(block_lines: List) -> str:
     result = ''
     for line in block_lines:
         result += '<h1>'
@@ -46,7 +49,7 @@ def handle_title(block_lines):
         result += '</h1>'
     return result
 
-def handle_text_spans(spans):
+def handle_text_spans(spans: List) -> str:
     result = ''
     for span in spans:
         span_type = span["type"]
@@ -56,13 +59,13 @@ def handle_text_spans(spans):
             result += inline_equation(span["content"])
     return result
 
-def handle_text_lines(lines):
+def handle_text_lines(lines: List) -> str:
     result = ''
     for line in lines:
         result += '<p>' + handle_text_spans(line["spans"]) + '</p>'
     return result
 
-def handle_interline_equation(lines):
+def handle_interline_equation(lines: List) -> str:
     result = ''
     for line in lines:
         result += '<p>'
@@ -72,14 +75,14 @@ def handle_interline_equation(lines):
         result += '</p>'
     return result
 
-def handle_image_blocks(blocks):
+def handle_image_blocks(blocks, root_path: Path) -> str:
     result = '<p>'
     for block in blocks:
         block_type = block["type"]
         if 'image_body' == block_type:
             for line in block["lines"]:
                 for span in line["spans"]:
-                    result += image_to_base64(span["image_path"])
+                    result += image_to_base64(span["image_path"], root_path)
         elif 'image_caption' == block_type:
             for line in block["lines"]:
                 for span in line["spans"]:
@@ -88,7 +91,7 @@ def handle_image_blocks(blocks):
     result += '</p>'
     return result
 
-def handle_table_blocks(blocks):
+def handle_table_blocks(blocks) -> str:
     result = ''
     for block in blocks:
         if 'table_caption' == block["type"]:
@@ -112,7 +115,7 @@ def handle_table_blocks(blocks):
             result += '</p>'
     return result
 
-def handle_para_blocks(para_blocks):
+def handle_para_blocks(para_blocks: List, root_path: Path) -> str:
     result = ""
     for block in para_blocks:
         block_type = block["type"]
@@ -123,32 +126,61 @@ def handle_para_blocks(para_blocks):
         elif 'interline_equation' == block_type:
             result += handle_interline_equation(block["lines"])
         elif 'image' == block_type:
-            result += handle_image_blocks(block["blocks"])
+            result += handle_image_blocks(block["blocks"], root_path)
         elif 'table' == block_type:
             result += handle_table_blocks(block["blocks"])
     return result
 
-def generate_epub(filename):
-    with open(filename, 'r') as f:
+def read_pdf_info(filename: Path) -> List:
+    with open(filename, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
-    pdf_info = json_data["pdf_info"]
+    return json_data["pdf_info"]
+
+def read_css() -> str:
+    with open("nav.css", 'r', encoding='utf-8') as f:
+        css = f.read()
+    return css
+
+def generate_epub(filename: Path) -> None:
+    pdf_info = read_pdf_info(filename)
 
     book = epub.EpubBook()
-    nav_list = ["nav"]
+    toc_list = []
+    nav_list: List[Any] = ["nav"]
     for info in pdf_info:
         page_idx = info["page_idx"]
-        para_blocks = handle_para_blocks(info["para_blocks"])
+        para_blocks = handle_para_blocks(info["para_blocks"], filename.parent)
+        if para_blocks.strip() != "":
+            page_title = f"page{page_idx}"
+            page_file = f"page{page_idx}.xhtml"
+            c = epub.EpubHtml(title=page_title, file_name=page_file, lang="en")
+            c.content = para_blocks
+            book.add_item(c)
+            toc_list.append(epub.Link(page_file, str(page_idx + 1), page_title))
+            nav_list.append(c)
 
-        c = epub.EpubHtml(title=f"page{page_idx}", file_name=f"page{page_idx}.xhtml", lang="en")
-        c.content = str(para_blocks).encode("utf-8")
-        book.add_item(c)
-        nav_list.append(c)
-        
+    css_content = read_css()
+    nav_css = epub.EpubItem(
+        uid="style_nav",
+        file_name="style/nav.css",
+        media_type="text/css",
+        content=css_content,
+    )
+    book.add_item(nav_css)
+
+    book.toc = toc_list
     book.spine = nav_list
-    # book.add_item(epub.EpubNcx())
-    # book.add_item(epub.EpubNav())
-    output_file = filename.replace(".json", ".epub")
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+
+    output_file = filename.with_suffix(".epub")
     epub.write_epub(output_file, book)
 
+def main():
+    if len(sys.argv) < 2:
+        print("Please set the middle json file!")
+        return
+    generate_epub(Path(sys.argv[1]))
+
 if __name__ == '__main__':
-    generate_epub("./demo2/auto/demo2_middle.json")
+    main()
